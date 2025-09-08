@@ -6,8 +6,7 @@ scikit-learn==1.5.1
 matplotlib==3.9.0
 openpyxl==3.1.5
 scipy==1.13.1
-anthropic==0.34.0
-seaborn==0.13.2
-oseti==0.2.0
 anthropic==0.40.0
 seaborn==0.13.2
+oseti==0.2.0
+mecab-python3==1.0.6
