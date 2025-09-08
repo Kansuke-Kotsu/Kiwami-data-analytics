@@ -116,20 +116,20 @@ top_neg = pd.DataFrame({feature_name: vocab[order_neg[:top_k]], "importance": ap
 col1, col2 = st.columns(2)
 with col1:
     st.markdown(f"#### 収益に **正** の影響が大きい {feature_name}")
-    fig1 = plt.figure(figsize=(7, 6))
-    plt.barh(top_pos[feature_name][::-1], top_pos["importance"][::-1])
-    plt.title("正の寄与（上位）")
-    plt.tight_layout()
-    st.pyplot(fig1)
+    #fig1 = plt.figure(figsize=(7, 6))
+    #plt.barh(top_pos[feature_name][::-1], top_pos["importance"][::-1])
+    #plt.title("正の寄与（上位）")
+    #plt.tight_layout()
+    #st.pyplot(fig1)
     st.dataframe(top_pos)
 
 with col2:
     st.markdown(f"#### 収益に **負** の影響が大きい {feature_name}")
-    fig2 = plt.figure(figsize=(7, 6))
-    plt.barh(top_neg[feature_name][::-1], top_neg["importance"][::-1])
-    plt.title("負の寄与（上位）")
-    plt.tight_layout()
-    st.pyplot(fig2)
+    #fig2 = plt.figure(figsize=(7, 6))
+    #plt.barh(top_neg[feature_name][::-1], top_neg["importance"][::-1])
+    #plt.title("負の寄与（上位）")
+    #plt.tight_layout()
+    #st.pyplot(fig2)
     st.dataframe(top_neg)
 
 # ダウンロード用
