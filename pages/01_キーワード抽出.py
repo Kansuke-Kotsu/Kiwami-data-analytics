@@ -10,7 +10,7 @@ from sklearn.metrics import r2_score, mean_absolute_error
 import matplotlib.pyplot as plt
 import io
 
-from lib.text_utils import is_noise_token
+from lib.text_utils import is_noise_token, simple_japanese_tokenize
 
 st.set_page_config(page_title="① キーワード抽出", page_icon="🔑", layout="wide")
 st.title("🔑 キーワード抽出（収益寄与の可視化）")
@@ -26,11 +26,21 @@ meta = st.session_state.get("meta", {})
 text_col = st.selectbox("台本テキスト列", options=list(df.columns), index=list(df.columns).index(meta.get("text_col")) if meta.get("text_col") in df.columns else 0)
 target_col = st.selectbox("収益（目的変数）列", options=[c for c in df.columns if c != text_col], index=list(df.columns).index(meta.get("profit_col")) if meta.get("profit_col") in df.columns else 0)
 
+# カスタムトークナイザー関数
+def japanese_tokenizer(text):
+    """日本語テキストを意味のある単語単位に分割"""
+    return simple_japanese_tokenize(text)
+
 # ハイパラ
 with st.sidebar:
     st.header("抽出パラメータ")
-    ngram_min = st.slider("n-gram最小", 2, 4, 2)
-    ngram_max = st.slider("n-gram最大", ngram_min, 6, 4)
+    use_word_tokens = st.checkbox("単語ベース抽出（推奨）", value=True, help="意味のある単語単位で抽出します")
+    if not use_word_tokens:
+        ngram_min = st.slider("n-gram最小", 2, 4, 2)
+        ngram_max = st.slider("n-gram最大", ngram_min, 6, 4)
+    else:
+        word_ngram_min = st.slider("単語n-gram最小", 1, 3, 1)
+        word_ngram_max = st.slider("単語n-gram最大", word_ngram_min, 4, 2)
     min_df = st.slider("min_df（最低出現数）", 3, 50, 10)
     max_features = st.slider("max_features", 1000, 20000, 5000, step=500)
     svd_components = st.slider("SVD成分数（圧縮次元）", 20, 300, 80, step=10)
@@ -49,13 +59,24 @@ if len(use) < 50:
 if len(use) > sample_n:
     use = use.sample(sample_n, random_state=42)
 
-# TF-IDF（char n-gram）
-vectorizer = TfidfVectorizer(
-    analyzer="char",
-    ngram_range=(ngram_min, ngram_max),
-    min_df=min_df,
-    max_features=max_features
-)
+# TF-IDF（単語ベースまたはchar n-gram）
+if use_word_tokens:
+    # 単語ベースの抽出
+    vectorizer = TfidfVectorizer(
+        tokenizer=japanese_tokenizer,
+        lowercase=False,
+        ngram_range=(word_ngram_min, word_ngram_max),
+        min_df=min_df,
+        max_features=max_features
+    )
+else:
+    # 従来のchar n-gram
+    vectorizer = TfidfVectorizer(
+        analyzer="char",
+        ngram_range=(ngram_min, ngram_max),
+        min_df=min_df,
+        max_features=max_features
+    )
 X_tfidf = vectorizer.fit_transform(use["_text"].values)
 vocab = np.array(vectorizer.get_feature_names_out())
 
@@ -88,23 +109,24 @@ approx_importance = np.where(noise_mask, 0.0, approx_importance)
 order_pos = np.argsort(approx_importance)[::-1]
 order_neg = np.argsort(approx_importance)
 
-top_pos = pd.DataFrame({"ngram": vocab[order_pos[:top_k]], "importance": approx_importance[order_pos[:top_k]]})
-top_neg = pd.DataFrame({"ngram": vocab[order_neg[:top_k]], "importance": approx_importance[order_neg[:top_k]]})
+feature_name = "キーワード" if use_word_tokens else "n-gram"
+top_pos = pd.DataFrame({feature_name: vocab[order_pos[:top_k]], "importance": approx_importance[order_pos[:top_k]]})
+top_neg = pd.DataFrame({feature_name: vocab[order_neg[:top_k]], "importance": approx_importance[order_neg[:top_k]]})
 
 col1, col2 = st.columns(2)
 with col1:
-    st.markdown("#### 収益に **正** の影響が大きい n-gram")
+    st.markdown(f"#### 収益に **正** の影響が大きい {feature_name}")
     fig1 = plt.figure(figsize=(7, 6))
-    plt.barh(top_pos["ngram"][::-1], top_pos["importance"][::-1])
+    plt.barh(top_pos[feature_name][::-1], top_pos["importance"][::-1])
     plt.title("正の寄与（上位）")
     plt.tight_layout()
     st.pyplot(fig1)
     st.dataframe(top_pos)
 
 with col2:
-    st.markdown("#### 収益に **負** の影響が大きい n-gram")
+    st.markdown(f"#### 収益に **負** の影響が大きい {feature_name}")
     fig2 = plt.figure(figsize=(7, 6))
-    plt.barh(top_neg["ngram"][::-1], top_neg["importance"][::-1])
+    plt.barh(top_neg[feature_name][::-1], top_neg["importance"][::-1])
     plt.title("負の寄与（上位）")
     plt.tight_layout()
     st.pyplot(fig2)
@@ -112,16 +134,20 @@ with col2:
 
 # ダウンロード用
 out = pd.DataFrame({
-    "ngram": vocab,
+    feature_name: vocab,
     "importance": approx_importance,
     "is_noise": noise_mask
 }).sort_values("importance", ascending=False)
 
+file_name = "keyword_importance.csv" if use_word_tokens else "ngram_importance.csv"
 st.download_button(
-    label="全n-gram重要度をCSVダウンロード",
+    label=f"全{feature_name}重要度をCSVダウンロード",
     data=out.to_csv(index=False).encode("utf-8-sig"),
-    file_name="ngram_importance.csv",
+    file_name=file_name,
     mime="text/csv",
 )
 
-st.caption("注：日本語は形態素解析なしでもchar n-gramで安定して傾向が取れます。英数字のみの羅列やURLは自動で除外しています。")
+if use_word_tokens:
+    st.caption("注：文字種の変化点で日本語テキストを単語単位に分割しています。意味のある単語での分析が可能です。")
+else:
+    st.caption("注：日本語は形態素解析なしでもchar n-gramで安定して傾向が取れます。英数字のみの羅列やURLは自動で除外しています。")
