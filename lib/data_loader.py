@@ -7,6 +7,26 @@ def _normalize_header(row0):
     h = row0.astype(str).str.replace(r"\s+", " ", regex=True).str.replace("\n", " ").str.strip()
     return h
 
+def _deduplicate_columns(columns):
+    seen = {}
+    result = []
+    
+    for col in columns:
+        # NaN or empty values handling
+        if pd.isna(col) or str(col).strip() in ['nan', 'NaN', '']:
+            col = 'unnamed_column'
+        
+        col_str = str(col).strip()
+        
+        if col_str in seen:
+            seen[col_str] += 1
+            result.append(f"{col_str}_{seen[col_str]}")
+        else:
+            seen[col_str] = 0
+            result.append(col_str)
+    
+    return result
+
 def _pick_col(candidates, cols):
     for name in candidates:
         matches = [c for c in cols if str(c).strip() == name]
@@ -34,6 +54,7 @@ def load_excel_guess_columns(file_like):
             best_df = tmp.copy()
 
     header = _normalize_header(best_df.iloc[0])
+    header = _deduplicate_columns(header)
     df = best_df.iloc[1:].copy()
     df.columns = header
     df = df.reset_index(drop=True)
