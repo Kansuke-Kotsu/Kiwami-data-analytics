@@ -44,7 +44,13 @@ CV_CANDIDATES = ["CV率", "CV", "conversion", "コンバージョン率"]
 
 def load_excel_guess_columns(file_like):
     # 読み込み（最も列数が多いシートを対象に）
-    xls = pd.ExcelFile(file_like)
+    try:
+        xls = pd.ExcelFile(file_like)
+    except ImportError as e:
+        if "openpyxl" in str(e):
+            raise ImportError("openpyxlライブラリが見つかりません。Excelファイルの読み込みにはopenpyxlが必要です。") from e
+        else:
+            raise e
     best = None
     best_df = None
     for sn in xls.sheet_names:
