@@ -95,11 +95,14 @@ with col1:
     )
 
 with col2:
+    revenue_options = [c for c in df.columns if c != script_col]
+    default_idx = revenue_options.index(meta.get("profit_col")) if meta.get("profit_col") in revenue_options else 0
     revenue_col = st.selectbox(
-        "収益データ列", 
-        options=[c for c in df.columns if c != script_col],
-        index=list(df.columns).index(meta.get("profit_col")) if meta.get("profit_col") in df.columns else 0
+        "収益データ列",
+        options=revenue_options,
+        index=default_idx
     )
+
 
 # データの前処理
 df_clean = df.copy()
@@ -186,23 +189,31 @@ def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
             else:
                 # oseti による感情分析
                 scores = analyzer.analyze(processed_text)
-                
-                # osetiは-1から1の範囲でスコアを返すので、0-1の範囲に正規化
-                compound_score = scores
-                
+                # scores は list（各文のスコア）なので、全体の複合スコアを平均で集約
+                if isinstance(scores, (list, tuple, np.ndarray)):
+                    if len(scores) == 0:
+                        compound_score = 0.0
+                    else:
+                        compound_score = float(np.mean(scores))
+                else:
+                    # 稀に単一数値が返ってきても安全に処理
+                    compound_score = float(scores)
+
+                # compound_score は -1〜1 を取りうる想定
+                # シンプルに「正／負／中立」を割り当て（合計が1になるように）
                 if compound_score > 0.1:
-                    positive = abs(compound_score)
+                    positive = compound_score          # 例: 0.7 → positive=0.7, neutral=0.3
                     negative = 0.0
-                    neutral = 1.0 - positive
+                    neutral  = 1.0 - positive
                 elif compound_score < -0.1:
                     positive = 0.0
-                    negative = abs(compound_score)
-                    neutral = 1.0 - negative
+                    negative = -compound_score         # 例: -0.6 → negative=0.6, neutral=0.4
+                    neutral  = 1.0 - negative
                 else:
                     positive = 0.0
                     negative = 0.0
-                    neutral = 1.0
-                
+                    neutral  = 1.0
+
                 sentiment_scores = {
                     "positive": positive,
                     "negative": negative,
@@ -264,10 +275,33 @@ if st.button("🚀 感情分析実行", type="primary"):
     correlation_results = []
     
     for emotion in emotion_cols:
-        # ピアソン相関
-        pearson_corr, pearson_p = pearsonr(results_df[emotion], results_df["revenue"])
-        # スピアマン相関  
-        spearman_corr, spearman_p = spearmanr(results_df[emotion], results_df["revenue"])
+        # データの有効性をチェック
+        emotion_data = results_df[emotion].values
+        revenue_data = results_df["revenue"].values
+        
+        # 定数配列やNaN値をチェック
+        if (np.std(emotion_data) == 0 or np.std(revenue_data) == 0 or 
+            np.isnan(emotion_data).all() or np.isnan(revenue_data).all()):
+            # 定数配列の場合は相関係数を0とする
+            pearson_corr, pearson_p = 0.0, 1.0
+            spearman_corr, spearman_p = 0.0, 1.0
+        else:
+            try:
+                # ピアソン相関
+                pearson_corr, pearson_p = pearsonr(emotion_data, revenue_data)
+                # スピアマン相関  
+                spearman_corr, spearman_p = spearmanr(emotion_data, revenue_data)
+                
+                # NaN値の処理
+                if np.isnan(pearson_corr):
+                    pearson_corr, pearson_p = 0.0, 1.0
+                if np.isnan(spearman_corr):
+                    spearman_corr, spearman_p = 0.0, 1.0
+                    
+            except Exception as e:
+                st.warning(f"相関計算エラー ({emotion}): {str(e)}")
+                pearson_corr, pearson_p = 0.0, 1.0
+                spearman_corr, spearman_p = 0.0, 1.0
         
         emotion_names = {
             "positive": "ポジティブ",
@@ -354,9 +388,15 @@ if st.button("🚀 感情分析実行", type="primary"):
     # 最高相関感情の散布図
     if len(corr_df) > 0:
         best_emotion_jp = corr_df.iloc[0]["感情"]
-        best_emotion_en = list(corr_df["感情"]).index(best_emotion_jp)
-        emotion_mapping = ["positive", "negative", "neutral", "compound"]
-        best_emotion_col = emotion_mapping[best_emotion_en]
+        
+        # 感情名から英語カラム名へのマッピング
+        emotion_name_mapping = {
+            "ポジティブ": "positive",
+            "ネガティブ": "negative", 
+            "中性": "neutral",
+            "総合感情": "compound"
+        }
+        best_emotion_col = emotion_name_mapping[best_emotion_jp]
         best_corr = corr_df.iloc[0]["ピアソン相関"]
         
         st.subheader(f"🎯 最高相関感情: {best_emotion_jp} (r={best_corr:.3f})")
@@ -368,11 +408,25 @@ if st.button("🚀 感情分析実行", type="primary"):
         ax.set_ylabel("収益")
         ax.set_title(f"{best_emotion_jp}スコア vs 収益")
         
-        # トレンドライン
-        z = np.polyfit(results_df[best_emotion_col], results_df["revenue"], 1)
-        p = np.poly1d(z)
-        ax.plot(results_df[best_emotion_col], p(results_df[best_emotion_col]), 
-               "r--", alpha=0.8, linewidth=2)
+        # トレンドライン（エラーハンドリング付き）
+        try:
+            x_data = results_df[best_emotion_col].values
+            y_data = results_df["revenue"].values
+            
+            # データの有効性をチェック
+            if (np.std(x_data) > 1e-10 and np.std(y_data) > 1e-10 and 
+                not np.isnan(x_data).any() and not np.isnan(y_data).any() and 
+                len(x_data) > 1):
+                
+                z = np.polyfit(x_data, y_data, 1)
+                p = np.poly1d(z)
+                ax.plot(x_data, p(x_data), "r--", alpha=0.8, linewidth=2)
+            else:
+                st.info(f"📝 {best_emotion_jp}データに一定値が多いため、トレンドラインを省略します。")
+                
+        except Exception as e:
+            st.warning(f"トレンドライン描画エラー: {str(e)}")
+            st.info("💡 データに数値的な問題があるため、トレンドラインなしで表示します。")
         
         plt.colorbar(scatter, label=f"{best_emotion_jp}スコア")
         plt.tight_layout()
