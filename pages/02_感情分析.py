@@ -95,11 +95,14 @@ with col1:
     )
 
 with col2:
+    revenue_options = [c for c in df.columns if c != script_col]
+    default_idx = revenue_options.index(meta.get("profit_col")) if meta.get("profit_col") in revenue_options else 0
     revenue_col = st.selectbox(
-        "収益データ列", 
-        options=[c for c in df.columns if c != script_col],
-        index=list(df.columns).index(meta.get("profit_col")) if meta.get("profit_col") in df.columns else 0
+        "収益データ列",
+        options=revenue_options,
+        index=default_idx
     )
+
 
 # データの前処理
 df_clean = df.copy()
@@ -186,23 +189,31 @@ def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
             else:
                 # oseti による感情分析
                 scores = analyzer.analyze(processed_text)
-                
-                # osetiは-1から1の範囲でスコアを返すので、0-1の範囲に正規化
-                compound_score = scores
-                
+                # scores は list（各文のスコア）なので、全体の複合スコアを平均で集約
+                if isinstance(scores, (list, tuple, np.ndarray)):
+                    if len(scores) == 0:
+                        compound_score = 0.0
+                    else:
+                        compound_score = float(np.mean(scores))
+                else:
+                    # 稀に単一数値が返ってきても安全に処理
+                    compound_score = float(scores)
+
+                # compound_score は -1〜1 を取りうる想定
+                # シンプルに「正／負／中立」を割り当て（合計が1になるように）
                 if compound_score > 0.1:
-                    positive = abs(compound_score)
+                    positive = compound_score          # 例: 0.7 → positive=0.7, neutral=0.3
                     negative = 0.0
-                    neutral = 1.0 - positive
+                    neutral  = 1.0 - positive
                 elif compound_score < -0.1:
                     positive = 0.0
-                    negative = abs(compound_score)
-                    neutral = 1.0 - negative
+                    negative = -compound_score         # 例: -0.6 → negative=0.6, neutral=0.4
+                    neutral  = 1.0 - negative
                 else:
                     positive = 0.0
                     negative = 0.0
-                    neutral = 1.0
-                
+                    neutral  = 1.0
+
                 sentiment_scores = {
                     "positive": positive,
                     "negative": negative,
