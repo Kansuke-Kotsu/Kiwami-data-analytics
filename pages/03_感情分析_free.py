@@ -264,10 +264,33 @@ if st.button("🚀 感情分析実行", type="primary"):
     correlation_results = []
     
     for emotion in emotion_cols:
-        # ピアソン相関
-        pearson_corr, pearson_p = pearsonr(results_df[emotion], results_df["revenue"])
-        # スピアマン相関  
-        spearman_corr, spearman_p = spearmanr(results_df[emotion], results_df["revenue"])
+        # データの有効性をチェック
+        emotion_data = results_df[emotion].values
+        revenue_data = results_df["revenue"].values
+        
+        # 定数配列やNaN値をチェック
+        if (np.std(emotion_data) == 0 or np.std(revenue_data) == 0 or 
+            np.isnan(emotion_data).all() or np.isnan(revenue_data).all()):
+            # 定数配列の場合は相関係数を0とする
+            pearson_corr, pearson_p = 0.0, 1.0
+            spearman_corr, spearman_p = 0.0, 1.0
+        else:
+            try:
+                # ピアソン相関
+                pearson_corr, pearson_p = pearsonr(emotion_data, revenue_data)
+                # スピアマン相関  
+                spearman_corr, spearman_p = spearmanr(emotion_data, revenue_data)
+                
+                # NaN値の処理
+                if np.isnan(pearson_corr):
+                    pearson_corr, pearson_p = 0.0, 1.0
+                if np.isnan(spearman_corr):
+                    spearman_corr, spearman_p = 0.0, 1.0
+                    
+            except Exception as e:
+                st.warning(f"相関計算エラー ({emotion}): {str(e)}")
+                pearson_corr, pearson_p = 0.0, 1.0
+                spearman_corr, spearman_p = 0.0, 1.0
         
         emotion_names = {
             "positive": "ポジティブ",
@@ -354,9 +377,15 @@ if st.button("🚀 感情分析実行", type="primary"):
     # 最高相関感情の散布図
     if len(corr_df) > 0:
         best_emotion_jp = corr_df.iloc[0]["感情"]
-        best_emotion_en = list(corr_df["感情"]).index(best_emotion_jp)
-        emotion_mapping = ["positive", "negative", "neutral", "compound"]
-        best_emotion_col = emotion_mapping[best_emotion_en]
+        
+        # 感情名から英語カラム名へのマッピング
+        emotion_name_mapping = {
+            "ポジティブ": "positive",
+            "ネガティブ": "negative", 
+            "中性": "neutral",
+            "総合感情": "compound"
+        }
+        best_emotion_col = emotion_name_mapping[best_emotion_jp]
         best_corr = corr_df.iloc[0]["ピアソン相関"]
         
         st.subheader(f"🎯 最高相関感情: {best_emotion_jp} (r={best_corr:.3f})")
@@ -368,11 +397,25 @@ if st.button("🚀 感情分析実行", type="primary"):
         ax.set_ylabel("収益")
         ax.set_title(f"{best_emotion_jp}スコア vs 収益")
         
-        # トレンドライン
-        z = np.polyfit(results_df[best_emotion_col], results_df["revenue"], 1)
-        p = np.poly1d(z)
-        ax.plot(results_df[best_emotion_col], p(results_df[best_emotion_col]), 
-               "r--", alpha=0.8, linewidth=2)
+        # トレンドライン（エラーハンドリング付き）
+        try:
+            x_data = results_df[best_emotion_col].values
+            y_data = results_df["revenue"].values
+            
+            # データの有効性をチェック
+            if (np.std(x_data) > 1e-10 and np.std(y_data) > 1e-10 and 
+                not np.isnan(x_data).any() and not np.isnan(y_data).any() and 
+                len(x_data) > 1):
+                
+                z = np.polyfit(x_data, y_data, 1)
+                p = np.poly1d(z)
+                ax.plot(x_data, p(x_data), "r--", alpha=0.8, linewidth=2)
+            else:
+                st.info(f"📝 {best_emotion_jp}データに一定値が多いため、トレンドラインを省略します。")
+                
+        except Exception as e:
+            st.warning(f"トレンドライン描画エラー: {str(e)}")
+            st.info("💡 データに数値的な問題があるため、トレンドラインなしで表示します。")
         
         plt.colorbar(scatter, label=f"{best_emotion_jp}スコア")
         plt.tight_layout()
