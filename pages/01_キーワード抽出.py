@@ -95,8 +95,8 @@ y_pred = model.predict(X_test)
 r2 = r2_score(y_test, y_pred)
 mae = mean_absolute_error(y_test, y_pred)
 
-st.subheader("モデル指標")
-st.write({"R2": round(float(r2), 4), "MAE": round(float(mae), 2), "n_train": int(len(X_train)), "n_test": int(len(X_test))})
+#st.subheader("モデル指標")
+#st.write({"R2": round(float(r2), 4), "MAE": round(float(mae), 2), "n_train": int(len(X_train)), "n_test": int(len(X_test))})
 
 # 係数を原語彙空間へ近似逆写像して各n-gramの重要度を推定
 coef_svd = model.coef_
