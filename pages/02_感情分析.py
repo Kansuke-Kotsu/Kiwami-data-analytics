@@ -260,7 +260,83 @@ if st.button("🚀 感情分析実行", type="primary"):
     results_df["revenue"] = sample_data[revenue_col].values
     results_df["text_sample"] = [text[:100] + "..." for text in texts]
     
+    # 感情判定（ポジティブ/ネガティブ）の追加
+    results_df["sentiment_label"] = results_df["compound"].apply(
+        lambda x: "ポジティブ" if x > 0.1 else "ネガティブ" if x < -0.1 else "中性"
+    )
+    
     st.success(f"🎉 {len(results_df)}件の感情分析が完了しました！")
+    
+    # 各台本データの感情判定一覧表示
+    st.subheader("📋 各台本データの感情判定一覧")
+    
+    # 感情判定結果のサマリー
+    sentiment_counts = results_df["sentiment_label"].value_counts()
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("ポジティブ", f"{sentiment_counts.get('ポジティブ', 0)}件", 
+                 f"{sentiment_counts.get('ポジティブ', 0) / len(results_df) * 100:.1f}%")
+    with col2:
+        st.metric("ネガティブ", f"{sentiment_counts.get('ネガティブ', 0)}件",
+                 f"{sentiment_counts.get('ネガティブ', 0) / len(results_df) * 100:.1f}%")
+    with col3:
+        st.metric("中性", f"{sentiment_counts.get('中性', 0)}件",
+                 f"{sentiment_counts.get('中性', 0) / len(results_df) * 100:.1f}%")
+    
+    # 台本データと感情判定結果の一覧表
+    display_df = pd.DataFrame({
+        "番号": range(1, len(results_df) + 1),
+        "台本データ（抜粋）": results_df["text_sample"],
+        "感情判定": results_df["sentiment_label"],
+        "総合スコア": results_df["compound"].round(3),
+        "ポジティブ": results_df["positive"].round(3),
+        "ネガティブ": results_df["negative"].round(3),
+        "収益": results_df["revenue"]
+    })
+    
+    # 感情別の色分けを適用
+    def highlight_sentiment(row):
+        if row["感情判定"] == "ポジティブ":
+            return ['background-color: #e6ffe6'] * len(row)
+        elif row["感情判定"] == "ネガティブ":
+            return ['background-color: #ffe6e6'] * len(row)
+        else:
+            return ['background-color: #f5f5f5'] * len(row)
+    
+    st.dataframe(
+        display_df.style.apply(highlight_sentiment, axis=1),
+        use_container_width=True,
+        height=400
+    )
+    
+    # フィルタリング機能
+    st.subheader("🔍 感情別フィルタリング")
+    
+    filter_emotion = st.selectbox(
+        "表示する感情を選択:",
+        options=["全て"] + list(sentiment_counts.index)
+    )
+    
+    if filter_emotion != "全て":
+        filtered_df = display_df[display_df["感情判定"] == filter_emotion]
+        st.write(f"**{filter_emotion}の台本データ ({len(filtered_df)}件):**")
+        st.dataframe(
+            filtered_df.style.apply(highlight_sentiment, axis=1),
+            use_container_width=True,
+            height=300
+        )
+        
+        # フィルタリング結果の統計
+        if len(filtered_df) > 0:
+            avg_revenue = filtered_df["収益"].mean()
+            avg_score = filtered_df["総合スコア"].mean()
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric(f"{filter_emotion}の平均収益", f"{avg_revenue:.2f}")
+            with col2:
+                st.metric(f"{filter_emotion}の平均感情スコア", f"{avg_score:.3f}")
     
     # 基本統計表示
     st.subheader("📊 感情スコア基本統計")
@@ -514,12 +590,25 @@ if st.button("🚀 感情分析実行", type="primary"):
     # CSVダウンロード
     st.subheader("💾 結果ダウンロード")
     
-    # 詳細結果CSV
-    detailed_csv = results_df.to_csv(index=False, encoding="utf-8-sig")
+    # 詳細結果CSV（感情判定ラベルを含む）
+    download_df = results_df.copy()
+    download_df = download_df[["text_sample", "sentiment_label", "compound", "positive", "negative", "neutral", "revenue"]]
+    download_df.columns = ["台本データ（抜粋）", "感情判定", "総合スコア", "ポジティブスコア", "ネガティブスコア", "中性スコア", "収益"]
+    
+    detailed_csv = download_df.to_csv(index=False, encoding="utf-8-sig")
     st.download_button(
         label="📁 詳細分析結果をCSVダウンロード",
         data=detailed_csv,
-        file_name="sentiment_analysis_free_detailed.csv",
+        file_name="sentiment_analysis_detailed_with_labels.csv",
+        mime="text/csv"
+    )
+    
+    # 感情判定一覧CSV
+    sentiment_list_csv = display_df.to_csv(index=False, encoding="utf-8-sig")
+    st.download_button(
+        label="📋 感情判定一覧をCSVダウンロード",
+        data=sentiment_list_csv,
+        file_name="sentiment_judgment_list.csv",
         mime="text/csv"
     )
     
