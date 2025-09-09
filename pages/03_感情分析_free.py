@@ -21,11 +21,66 @@ meta = st.session_state.get("meta", {})
 # oseti ライブラリの確認とインポート
 try:
     import oseti
-    analyzer = oseti.Analyzer()
+    
+    # MeCab設定エラーのハンドリング
+    try:
+        analyzer = oseti.Analyzer()
+    except RuntimeError as e:
+        if "mecabrc" in str(e).lower():
+            st.warning("⚠️ MeCabの設定ファイルが見つかりません。代替方法を試します...")
+            
+            # 複数の代替設定を試行
+            mecab_configs = [
+                "",  # デフォルト
+                "-r ''",  # 空のrc設定
+                "-r /dev/null",  # 無効化
+                "-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd",  # 辞書パス指定
+                "-d /usr/local/lib/mecab/dic/ipadic",  # 標準辞書
+            ]
+            
+            analyzer = None
+            for config in mecab_configs:
+                try:
+                    if config == "":
+                        # MeCabのパッケージが正しくインストールされていない場合の警告
+                        st.info("🔧 MeCab設定を自動調整中...")
+                        analyzer = oseti.Analyzer(mecab_args="-r ''")
+                    else:
+                        analyzer = oseti.Analyzer(mecab_args=config)
+                    st.success("✅ MeCab設定が正常に構成されました！")
+                    break
+                except:
+                    continue
+            
+            if analyzer is None:
+                st.error("💔 MeCabの設定に失敗しました。以下の手順をお試しください：")
+                st.code("""
+# macOSの場合:
+brew install mecab mecab-ipadic
+
+# Linuxの場合:
+sudo apt-get install mecab mecab-ipadic-utf8
+
+# MeCab辞書の再インストール:
+pip uninstall mecab-python3
+pip install mecab-python3
+                """)
+                st.info("💡 または、代替として感情分析LLM版をご利用ください。")
+                st.stop()
+        else:
+            # その他のMeCabエラー
+            st.error(f"💔 MeCabエラー: {str(e)}")
+            st.info("💡 感情分析LLM版のご利用をお勧めします。")
+            st.stop()
+    
 except ImportError:
     st.error("💔 osetiライブラリがインストールされていません。")
     st.code("pip install oseti")
     st.info("requirements.txtにosetiを追加して再起動してください。")
+    st.stop()
+except Exception as e:
+    st.error(f"💔 予期しないエラーが発生しました: {str(e)}")
+    st.info("💡 感情分析LLM版のご利用をお勧めします。")
     st.stop()
 
 # 列選択
