@@ -6,7 +6,8 @@ pandas==2.2.2
 # MeCab系（oSetiが必要な場合）
 mecab-python3==1.0.9
 # oseti を使うならここに oseti も
-oseti==0.2.0
+#oseti==0.2.0
+oseti==1.3.6
 # emoji ライブラリのバージョン制約（oseti互換性のため）
 emoji<2.0.0
 
