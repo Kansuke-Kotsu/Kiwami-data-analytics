@@ -1,3 +1,4 @@
+pip==25.2
 streamlit==1.37.1
 # pandasは3.12でwheelがある 2.2 系でOK
 numpy>=1.26
