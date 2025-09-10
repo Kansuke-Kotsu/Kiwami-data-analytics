@@ -7,8 +7,8 @@ from scipy.stats import pearsonr, spearmanr
 import re
 import io
 
-st.set_page_config(page_title="② 感情分析 ", page_icon="💖", layout="wide")
-st.title("💖 感情分析による収益相関分析")
+st.set_page_config(page_title="② 感情分析 ", page_icon="", layout="wide")
+st.title("感情分析による収益相関分析")
 
 # セッション状態チェック
 if "df" not in st.session_state:
@@ -27,7 +27,7 @@ try:
         analyzer = oseti.Analyzer()
     except RuntimeError as e:
         if "mecabrc" in str(e).lower():
-            st.warning("⚠️ MeCabの設定ファイルが見つかりません。代替方法を試します...")
+            st.warning("MeCabの設定ファイルが見つかりません。代替方法を試します...")
             
             # 複数の代替設定を試行
             mecab_configs = [
@@ -47,13 +47,13 @@ try:
                         analyzer = oseti.Analyzer(mecab_args="-r ''")
                     else:
                         analyzer = oseti.Analyzer(mecab_args=config)
-                    st.success("✅ MeCab設定が正常に構成されました！")
+                    st.success("MeCab設定が正常に構成されました！")
                     break
                 except:
                     continue
             
             if analyzer is None:
-                st.error("💔 MeCabの設定に失敗しました。以下の手順をお試しください：")
+                st.error("MeCabの設定に失敗しました。以下の手順をお試しください：")
                 st.code("""
 # macOSの場合:
 brew install mecab mecab-ipadic
@@ -65,22 +65,22 @@ sudo apt-get install mecab mecab-ipadic-utf8
 pip uninstall mecab-python3
 pip install mecab-python3
                 """)
-                st.info("💡 または、代替として感情分析LLM版をご利用ください。")
+                st.info("または、代替として感情分析LLM版をご利用ください。")
                 st.stop()
         else:
             # その他のMeCabエラー
-            st.error(f"💔 MeCabエラー: {str(e)}")
-            st.info("💡 感情分析LLM版のご利用をお勧めします。")
+            st.error(f"MeCabエラー: {str(e)}")
+            st.info("感情分析LLM版のご利用をお勧めします。")
             st.stop()
     
 except ImportError:
-    st.error("💔 osetiライブラリがインストールされていません。")
+    st.error("osetiライブラリがインストールされていません。")
     st.code("pip install oseti")
     st.info("requirements.txtにosetiを追加して再起動してください。")
     st.stop()
 except Exception as e:
-    st.error(f"💔 予期しないエラーが発生しました: {str(e)}")
-    st.info("💡 感情分析LLM版のご利用をお勧めします。")
+    st.error(f"予期しないエラーが発生しました: {str(e)}")
+    st.info("感情分析LLM版のご利用をお勧めします。")
     st.stop()
 
 # 列選択
@@ -245,9 +245,9 @@ def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
     return results
 
 # 感情分析実行
-if st.button("🚀 感情分析実行", type="primary"):
+if st.button("感情分析実行", type="primary"):
     
-    st.info("💖 osetiライブラリによる感情分析を開始します")
+    st.info("osetiライブラリによる感情分析を開始します")
     
     # テキストリスト準備
     texts = sample_data[script_col].astype(str).tolist()
@@ -265,10 +265,10 @@ if st.button("🚀 感情分析実行", type="primary"):
         lambda x: "ポジティブ" if x > 0.1 else "ネガティブ" if x < -0.1 else "中性"
     )
     
-    st.success(f"🎉 {len(results_df)}件の感情分析が完了しました！")
+    st.success(f" {len(results_df)}件の感情分析が完了しました！")
     
     # 各台本データの感情判定一覧表示
-    st.subheader("📋 各台本データの感情判定一覧")
+    st.subheader(" 各台本データの感情判定一覧")
     
     # 感情判定結果のサマリー
     sentiment_counts = results_df["sentiment_label"].value_counts()
@@ -311,7 +311,7 @@ if st.button("🚀 感情分析実行", type="primary"):
     )
     
     # フィルタリング機能
-    st.subheader("🔍 感情別フィルタリング")
+    st.subheader("感情別フィルタリング")
     
     filter_emotion = st.selectbox(
         "表示する感情を選択:",
@@ -339,13 +339,13 @@ if st.button("🚀 感情分析実行", type="primary"):
                 st.metric(f"{filter_emotion}の平均感情スコア", f"{avg_score:.3f}")
     
     # 基本統計表示
-    st.subheader("📊 感情スコア基本統計")
+    st.subheader("感情スコア基本統計")
     
     emotion_stats = results_df[["positive", "negative", "neutral", "compound"]].describe()
     st.dataframe(emotion_stats.round(3))
     
     # 相関分析
-    st.subheader("📈 感情-収益相関分析")
+    st.subheader("感情-収益相関分析")
     
     emotion_cols = ["positive", "negative", "neutral", "compound"]
     correlation_results = []
