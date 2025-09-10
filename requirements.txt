@@ -7,6 +7,8 @@ pandas==2.2.2
 mecab-python3==1.0.9
 # oseti を使うならここに oseti も
 oseti==0.2.0
+# emoji ライブラリのバージョン制約（oseti互換性のため）
+emoji<2.0.0
 
 
 scikit-learn==1.5.1
