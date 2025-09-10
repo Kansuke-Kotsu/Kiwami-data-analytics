@@ -3,8 +3,8 @@ streamlit==1.37.1
 numpy>=1.26
 pandas==2.2.2
 
-# MeCab系（oSetiが必要な場合）
-mecab-python3==1.0.9
+# MeCab系（oSetiが必要な場合）- より安定したバージョンに固定
+mecab-python3==1.0.6
 # oseti を使うならここに oseti も
 oseti==0.2.0
 # emoji ライブラリのバージョン制約（oseti互換性のため）

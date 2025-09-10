@@ -7,6 +7,86 @@ from scipy.stats import pearsonr, spearmanr
 import re
 import io
 
+# MeCab不要の簡易感情分析クラス
+class SimpleSentimentAnalyzer:
+    """MeCabに依存しない簡易感情分析クラス"""
+    
+    def __init__(self):
+        # 基本的な感情語彙辞書（日本語）
+        self.positive_words = {
+            '嬉しい': 0.8, 'うれしい': 0.8, '楽しい': 0.7, 'たのしい': 0.7,
+            '良い': 0.6, 'よい': 0.6, 'いい': 0.6, 'すごい': 0.7, 'すばらしい': 0.9,
+            'すてき': 0.7, '素敵': 0.7, '最高': 0.9, '素晴らしい': 0.9, '感動': 0.8,
+            '愛': 0.8, '好き': 0.7, '幸せ': 0.8, '成功': 0.7, '勝利': 0.8,
+            'ありがとう': 0.7, 'がんばる': 0.6, '頑張る': 0.6, '笑顔': 0.7, 'おめでとう': 0.8,
+            '面白い': 0.6, 'おもしろい': 0.6, 'かわいい': 0.6, 'きれい': 0.6, '美しい': 0.7,
+            '安心': 0.6, '満足': 0.7, '充実': 0.7, '快適': 0.6, '平和': 0.6
+        }
+        
+        self.negative_words = {
+            '悲しい': -0.8, 'かなしい': -0.8, '辛い': -0.7, 'つらい': -0.7,
+            '悪い': -0.6, 'わるい': -0.6, 'だめ': -0.6, 'ダメ': -0.6, '最悪': -0.9,
+            '嫌い': -0.7, 'きらい': -0.7, '嫌': -0.6, '怒り': -0.8, '腹立つ': -0.7,
+            '失敗': -0.7, '困る': -0.6, '不安': -0.7, '心配': -0.6, '疲れる': -0.5,
+            '病気': -0.6, '痛い': -0.6, 'つまらない': -0.6, '退屈': -0.5, '面倒': -0.5,
+            '危険': -0.7, '問題': -0.6, '困難': -0.7, '苦しい': -0.8, 'むかつく': -0.7,
+            '絶望': -0.9, 'ストレス': -0.6, '不満': -0.6, '後悔': -0.7, '恐怖': -0.8
+        }
+        
+        # 強調語の重み調整
+        self.intensifiers = {
+            'とても': 1.5, 'すごく': 1.4, '本当に': 1.3, 'めちゃくちゃ': 1.6,
+            'かなり': 1.3, 'ものすごく': 1.5, '非常に': 1.4, '超': 1.4,
+            '少し': 0.7, 'ちょっと': 0.6, 'やや': 0.8, '若干': 0.7
+        }
+        
+        # 否定語
+        self.negators = ['ない', 'ず', 'ぬ', 'でも', 'けど', 'が']
+    
+    def analyze(self, text):
+        """簡易感情分析を実行"""
+        if not text or not isinstance(text, str):
+            return 0.0
+        
+        text = text.lower().strip()
+        words = re.findall(r'[ひらがなカタカナ漢字一-龯]+', text)
+        
+        score = 0.0
+        word_count = 0
+        
+        for i, word in enumerate(words):
+            # ポジティブ語彙のチェック
+            if word in self.positive_words:
+                word_score = self.positive_words[word]
+                word_count += 1
+                
+            # ネガティブ語彙のチェック  
+            elif word in self.negative_words:
+                word_score = self.negative_words[word]
+                word_count += 1
+            else:
+                continue
+            
+            # 強調語の調整
+            if i > 0 and words[i-1] in self.intensifiers:
+                word_score *= self.intensifiers[words[i-1]]
+            
+            # 否定語の調整（簡易）
+            negation_context = ' '.join(words[max(0, i-2):i])
+            for neg in self.negators:
+                if neg in negation_context:
+                    word_score *= -0.8
+                    break
+            
+            score += word_score
+        
+        # 正規化（-1から1の範囲に調整）
+        if word_count == 0:
+            return 0.0
+        
+        normalized_score = score / word_count
+        return max(-1.0, min(1.0, normalized_score))
+
 st.set_page_config(page_title="② 感情分析 ", page_icon="", layout="wide")
 st.title("感情分析による収益相関分析")
 
@@ -18,69 +98,154 @@ if "df" not in st.session_state:
 df = st.session_state["df"].copy()
 meta = st.session_state.get("meta", {})
 
-# oseti ライブラリの確認とインポート
-try:
-    import oseti
-    
-    # MeCab設定エラーのハンドリング
+# 感情分析器の初期化
+analyzer = None
+use_simple_mode = st.session_state.get("use_simple_sentiment", False)
+
+# 簡易モードでの強制実行チェック
+if "force_simple_mode" in st.query_params:
+    use_simple_mode = True
+    st.session_state.use_simple_sentiment = True
+
+if use_simple_mode:
+    # 簡易感情分析モードを使用
+    analyzer = SimpleSentimentAnalyzer()
+    st.info("🚀 簡易感情分析モード (MeCab不要) で動作中")
+else:
+    # oseti ライブラリの確認とインポート
     try:
-        analyzer = oseti.Analyzer()
-    except RuntimeError as e:
-        if "mecabrc" in str(e).lower():
-            st.warning("MeCabの設定ファイルが見つかりません。代替方法を試します...")
+        import oseti
+        
+        # MeCab設定エラーの堅牢なハンドリング
+        def initialize_oseti_analyzer():
+            """より堅牢なoseti Analyzer初期化"""
             
-            # 複数の代替設定を試行
+            # Streamlit環境用の拡張MeCab設定リスト
             mecab_configs = [
-                "",  # デフォルト
-                "-r ''",  # 空のrc設定
-                "-r /dev/null",  # 無効化
-                "-d /usr/local/lib/mecab/dic/mecab-ipadic-neologd",  # 辞書パス指定
-                "-d /usr/local/lib/mecab/dic/ipadic",  # 標準辞書
+                # 最もシンプルな設定から試行
+                "-r ''",                    # 空のrc設定
+                "-r /dev/null",             # rc無効化
+                "",                         # デフォルト設定
+                "-Owakati",                 # 分かち書きモード
+                "-r /etc/mecabrc",          # 一般的なLinux設定
+                "-r /usr/local/etc/mecabrc",# macOS Homebrew設定
+                "-d /usr/lib/x86_64-linux-gnu/mecab/dic/mecab-ipadic-neologd",  # Ubuntu辞書
+                "-d /usr/local/lib/mecab/dic/ipadic",  # macOS標準辞書
+                "-d /usr/share/mecab/dic/ipadic",      # Debian/Ubuntu標準
+                "-F%m ",                    # 最小出力フォーマット
             ]
             
-            analyzer = None
-            for config in mecab_configs:
+            # 進捗表示
+            progress_placeholder = st.empty()
+            progress_placeholder.info("🔧 MeCab設定を自動調整中...")
+            
+            for i, config in enumerate(mecab_configs):
                 try:
+                    progress_placeholder.info(f"🔧 MeCab設定を試行中... ({i+1}/{len(mecab_configs)}) {config or 'デフォルト'}")
+                    
                     if config == "":
-                        # MeCabのパッケージが正しくインストールされていない場合の警告
-                        st.info("🔧 MeCab設定を自動調整中...")
-                        analyzer = oseti.Analyzer(mecab_args="-r ''")
+                        test_analyzer = oseti.Analyzer()
                     else:
-                        analyzer = oseti.Analyzer(mecab_args=config)
-                    st.success("MeCab設定が正常に構成されました！")
-                    break
-                except:
+                        test_analyzer = oseti.Analyzer(mecab_args=config)
+                    
+                    # 簡単な動作テスト
+                    test_result = test_analyzer.analyze("テスト")
+                    if test_result is not None:
+                        progress_placeholder.success(f"✅ MeCab設定が正常に構成されました！ (設定: {config or 'デフォルト'})")
+                        return test_analyzer
+                        
+                except Exception as e:
+                    # エラーログを詳細に記録（デバッグ用）
+                    if st.secrets.get("debug_mode", False):
+                        st.write(f"設定 `{config}` でエラー: {str(e)}")
                     continue
             
-            if analyzer is None:
-                st.error("MeCabの設定に失敗しました。以下の手順をお試しください：")
-                st.code("""
-# macOSの場合:
-brew install mecab mecab-ipadic
-
-# Linuxの場合:
-sudo apt-get install mecab mecab-ipadic-utf8
-
-# MeCab辞書の再インストール:
-pip uninstall mecab-python3
-pip install mecab-python3
-                """)
-                st.info("または、代替として感情分析LLM版をご利用ください。")
-                st.stop()
-        else:
-            # その他のMeCabエラー
-            st.error(f"MeCabエラー: {str(e)}")
-            st.info("感情分析LLM版のご利用をお勧めします。")
-            st.stop()
+            # 全ての設定が失敗した場合
+            progress_placeholder.empty()
+            return None
     
-except ImportError:
-    st.error("osetiライブラリがインストールされていません。")
-    st.code("pip install oseti")
-    st.info("requirements.txtにosetiを追加して再起動してください。")
-    st.stop()
-except Exception as e:
-    st.error(f"予期しないエラーが発生しました: {str(e)}")
-    st.info("感情分析LLM版のご利用をお勧めします。")
+    # MeCab初期化実行
+    try:
+        analyzer = initialize_oseti_analyzer()
+        
+        if analyzer is None:
+            # 全て失敗した場合のフォールバック
+            st.error("🚨 MeCabの設定に失敗しました")
+            
+            # Streamlit環境に特化したソリューション
+            st.markdown("""
+            ### 💡 Streamlit環境での解決方法
+            
+            #### **方法1: システムパッケージの確認**
+            """)
+            
+            st.code("""
+# 1. MeCabシステムパッケージのインストール確認
+# macOS (Homebrew):
+brew list mecab mecab-ipadic || brew install mecab mecab-ipadic
+
+# Ubuntu/Debian:
+apt list --installed | grep mecab || sudo apt-get install mecab mecab-ipadic-utf8
+
+# CentOS/RHEL:
+yum list installed | grep mecab || sudo yum install mecab mecab-ipadic
+            """)
+            
+            st.markdown("#### **方法2: Python環境のリセット**")
+            st.code("""
+# 2. Python MeCabバインディングの再インストール
+pip uninstall -y mecab-python3 oseti
+pip install --no-cache-dir mecab-python3==1.0.6
+pip install --no-cache-dir oseti==0.2.0
+            """)
+            
+            st.markdown("#### **方法3: 環境変数の設定**")
+            st.code("""
+# 3. 環境変数でMeCab辞書パスを明示
+export MECAB_DICDIR=/usr/local/lib/mecab/dic/ipadic  # macOS
+export MECAB_DICDIR=/usr/lib/mecab/dic/ipadic        # Linux
+            """)
+            
+            st.markdown("#### **方法4: Docker環境の場合**")
+            st.code("""
+# Dockerfile に追加
+RUN apt-get update && apt-get install -y mecab mecab-ipadic-utf8 libmecab-dev
+ENV MECAB_DICDIR /usr/lib/mecab/dic/ipadic
+            """)
+            
+            # 代替案の提示
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🚀 簡易感情分析モードで続行", type="primary"):
+                    st.session_state.use_simple_sentiment = True
+                    st.rerun()
+                st.info("MeCab不要の基本的な感情分析で続行します")
+            
+            with col2:
+                st.info("📎 **推奨**: 上記の解決方法を試すか、LLM版をご利用ください")
+                if st.button("🔄 MeCabの設定を再試行"):
+                    st.rerun()
+            
+            st.stop()
+            
+        except Exception as e:
+            st.error(f"初期化中にエラーが発生: {str(e)}")
+            st.info("📝 このエラーをコピーして開発者に報告してください。")
+            st.stop()
+        
+    except ImportError:
+        st.error("osetiライブラリがインストールされていません。")
+        st.code("pip install oseti==0.2.0")
+        st.info("requirements.txtにosetiを追加して再起動してください。")
+        st.stop()
+    except Exception as e:
+        st.error(f"予期しないエラーが発生しました: {str(e)}")
+        st.info("技術的な問題が発生しています。管理者にお問い合わせください。")
+        st.stop()
+
+# アナライザーが正常に初期化されているか確認
+if analyzer is None:
+    st.error("感情分析器の初期化に失敗しました。")
     st.stop()
 
 # 列選択
@@ -167,7 +332,7 @@ def preprocess_text(text, mode="basic"):
 
 # 感情分析関数
 def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
-    """バッチ感情分析"""
+    """バッチ感情分析（oseti または 簡易モード対応）"""
     results = []
     
     progress_bar = st.progress(0)
@@ -187,27 +352,32 @@ def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
                     "compound": 0.0
                 }
             else:
-                # oseti による感情分析
-                scores = analyzer.analyze(processed_text)
-                # scores は list（各文のスコア）なので、全体の複合スコアを平均で集約
-                if isinstance(scores, (list, tuple, np.ndarray)):
-                    if len(scores) == 0:
-                        compound_score = 0.0
-                    else:
-                        compound_score = float(np.mean(scores))
+                # 感情分析器のタイプに応じて処理を分岐
+                if isinstance(analyzer, SimpleSentimentAnalyzer):
+                    # 簡易感情分析の場合
+                    compound_score = analyzer.analyze(processed_text)
                 else:
-                    # 稀に単一数値が返ってきても安全に処理
-                    compound_score = float(scores)
+                    # oseti による感情分析の場合
+                    scores = analyzer.analyze(processed_text)
+                    # scores は list（各文のスコア）なので、全体の複合スコアを平均で集約
+                    if isinstance(scores, (list, tuple, np.ndarray)):
+                        if len(scores) == 0:
+                            compound_score = 0.0
+                        else:
+                            compound_score = float(np.mean(scores))
+                    else:
+                        # 稀に単一数値が返ってきても安全に処理
+                        compound_score = float(scores)
 
                 # compound_score は -1〜1 を取りうる想定
                 # シンプルに「正／負／中立」を割り当て（合計が1になるように）
                 if compound_score > 0.1:
-                    positive = compound_score          # 例: 0.7 → positive=0.7, neutral=0.3
+                    positive = abs(compound_score)     # 正の値を正規化
                     negative = 0.0
                     neutral  = 1.0 - positive
                 elif compound_score < -0.1:
                     positive = 0.0
-                    negative = -compound_score         # 例: -0.6 → negative=0.6, neutral=0.4
+                    negative = abs(compound_score)     # 負の値を正の値に変換
                     neutral  = 1.0 - negative
                 else:
                     positive = 0.0
@@ -226,7 +396,9 @@ def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
             # プログレス更新
             progress = (idx + 1) / len(texts)
             progress_bar.progress(progress)
-            status_text.text(f"分析中... {idx+1}/{len(texts)} ({progress*100:.1f}%)")
+            
+            analyzer_type = "簡易モード" if isinstance(analyzer, SimpleSentimentAnalyzer) else "osetiモード"
+            status_text.text(f"{analyzer_type} で分析中... {idx+1}/{len(texts)} ({progress*100:.1f}%)")
             
         except Exception as e:
             # エラーの場合はニュートラルスコア
@@ -239,15 +411,21 @@ def analyze_sentiment_batch(texts, preprocessing_mode="basic"):
             })
             continue
     
-    status_text.text("✅ 感情分析完了！")
+    analyzer_type = "簡易感情分析" if isinstance(analyzer, SimpleSentimentAnalyzer) else "oseti感情分析"
+    status_text.text(f"✅ {analyzer_type}完了！")
     progress_bar.progress(1.0)
     
     return results
 
 # 感情分析実行
-if st.button("感情分析実行", type="primary"):
+analyzer_name = "簡易感情分析 (MeCab不要)" if isinstance(analyzer, SimpleSentimentAnalyzer) else "oseti感情分析"
+
+if st.button(f"感情分析実行 ({analyzer_name})", type="primary"):
     
-    st.info("osetiライブラリによる感情分析を開始します")
+    if isinstance(analyzer, SimpleSentimentAnalyzer):
+        st.info("簡易感情分析による感情分析を開始します（MeCab不要）")
+    else:
+        st.info("osetiライブラリによる感情分析を開始します")
     
     # テキストリスト準備
     texts = sample_data[script_col].astype(str).tolist()
@@ -625,21 +803,26 @@ if st.button("感情分析実行", type="primary"):
 with st.expander("ℹ️ 使用方法とヒント"):
     st.markdown("""
     ### 🎯 機能概要
-    - **感情分析**: osetiライブラリによる日本語感情分析
+    - **感情分析**: 日本語感情分析（osetiまたは簡易モード）
     - **相関分析**: 感情スコアと収益の相関関係を統計的に検証
     - **可視化**: 相関関係、感情分布、ヒートマップを表示
     - **エクスポート**: 分析結果をCSV形式でダウンロード可能
     
-    ### 💖 osetiライブラリについて
+    ### 🔧 感情分析モード
+    **osetiモード（推奨）:**
+    - MeCabによる高精度な形態素解析
     - 日本語専用の感情分析ライブラリ
-    - APIキー不要、完全無料で利用可能
-    - -1（ネガティブ）から1（ポジティブ）のスコアを出力
-    - 辞書ベースの感情分析手法
+    - より詳細で精密な感情分析
+    
+    **簡易モード（MeCab不要）:**
+    - システム設定不要で即座に利用可能
+    - 基本的な感情語彙辞書による分析
+    - MeCab設定問題の回避策として提供
     
     ### ⚙️ 設定のヒント
     - **基本前処理**: 軽微なクリーニングのみ
     - **詳細前処理**: URL、記号、数字を除去してより精密に分析
-    - **最大分析件数**: 処理速度を考慮して調整（osetiは高速）
+    - **最大分析件数**: 処理速度を考慮して調整
     
     ### 📊 結果の解釈
     - **positive**: ポジティブ感情の強さ（0-1）
@@ -648,10 +831,14 @@ with st.expander("ℹ️ 使用方法とヒント"):
     - **compound**: 総合感情スコア（-1から1）
     - **統計的有意性**: p値 < 0.05 で相関が統計的に意味あり
     
-    ### 🆚 LLM版との比較
-    - **LLM版**: より複雑な感情分析、API料金が発生
-    - **無料版**: 高速処理、API料金なし、基本的な感情分析
+    ### 🆚 各版の特徴比較
+    - **LLM版**: AI による複雑な感情分析、API料金が発生
+    - **oseti版**: 高精度、MeCab要、完全無料
+    - **簡易版**: 基本精度、設定不要、完全無料
     """)
 
 st.markdown("---")
-st.caption("💖 oseti ライブラリによる感情分析 | 📊 台本データ分析ハブ")
+if isinstance(analyzer, SimpleSentimentAnalyzer):
+    st.caption("🚀 簡易感情分析 (MeCab不要) | 📊 台本データ分析ハブ")
+else:
+    st.caption("💖 oseti ライブラリによる感情分析 | 📊 台本データ分析ハブ")
